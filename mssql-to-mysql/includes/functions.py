@@ -16,7 +16,7 @@ def check_table_exists(dbcur, tablename):
         WHERE table_name = '{0}'
         """.format(tablename.replace('\'', '\'\'')))
     if dbcur.fetchone()[0] == 1:
-        return True
+        return False
 
 
-    return False
+    return True
