@@ -10,6 +10,11 @@ import includes.sqlserver_datatypes as data_types
 
 import pprint
 
+from termcolor import colored, cprint
+
+reload(sys);
+sys.setdefaultencoding("utf8")
+
 #connection for MSSQL. (Note: you must have FreeTDS installed and configured!)
 ms_conn = pyodbc.connect(config.odbcConString)
 ms_cursor = ms_conn.cursor()
@@ -30,56 +35,54 @@ if config.list_of_tables:
 else:
     ms_tables = "WHERE type in ('U')" #tables are 'U' and views are 'V' 
 
-
 ms_cursor.execute("SELECT * FROM sysobjects %s;" % ms_tables ) #sysobjects is a table in MSSQL db's containing meta data about the database. (Note: this may vary depending on your MSSQL version!)
 ms_tables = ms_cursor.fetchall()
-noLength = [56, 58, 61, 35, 241] #list of MSSQL data types that don't require a defined lenght ie. datetime
+noLength = [173, 165, 34, 58, 61, 35, 241] #list of MSSQL data types that don't require a defined lenght ie. datetime
+isDecimal = [60, 106, 108, 122] #list of MSSQL data types that are decimal
+isInt = [48, 52, 56, 104, 127] #list of MSSQL data types that are integers
 
 for tbl in ms_tables:
-    pprint.pprint(tbl[0])
-    #crtTable = final_new_table_names[tbl[0]]
+    if config.list_of_tables:
+        crtTable = final_new_table_names[tbl[0]]
+    else:
+        crtTable = tbl[0]
+    print('Table: '+crtTable)
     crtTable = tbl[0]
-    ms_cursor.execute("SELECT * FROM syscolumns WHERE id = OBJECT_ID('%s')" % tbl[0]) #syscolumns: see sysobjects above.
+    ms_cursor.execute("SELECT * FROM syscolumns WHERE id = OBJECT_ID('%s')" % crtTable) #syscolumns: see sysobjects above.
     columns = ms_cursor.fetchall()
     attr = ""
     sattr = ""
     for col in columns:
-        colType = data_types.data_types[str(col.xtype)] #retrieve the column type based on the data type id
+        mysqlColType = data_types.data_types[str(col.xtype)] #retrieve the column type based on the data type id
 
-        #make adjustments to account for data types present in MSSQL but not supported in MySQL (NEEDS WORK!)
+        #Removing data types from found records
         if col.xtype == 189:
-            attr += "`"+col.name +"` "+ colType + ", "
-            sattr += "cast(["+col.name+"] as datetime) as ["+col.name+"], "
-        elif col.xtype == 60:
-            attr += "`"+col.name +"` "+ colType + "(" + str(col.xprec) + "," + str(col.xscale) + "), "
-            sattr += "["+col.name+"], "
-        elif col.xtype == 106:
-            attr += "`"+col.name +"` "+ colType + "(" + str(col.xprec) + "," + str(col.xscale) + ") ,"
-            sattr += "["+col.name+"], "
-        elif col.xtype == 108:
-            attr += "`"+col.name +"` "+ colType + "(" + str(col.xprec) + "," + str(col.xscale) + "), "
-            sattr += "["+col.name+"], "
-        elif col.xtype == 122:
-            attr += "`"+col.name +"` "+ colType + "(" + str(col.xprec) + "," + str(col.xscale) + "), "
+            text = colored('Ignoring Timestamp Column: ' + col.name, 'red')
+            print(text);
+        elif col.xtype in isDecimal:
+            attr += "`"+col.name +"` "+ mysqlColType + "(" + str(col.xprec) + "," + str(col.xscale) + "), "
             sattr += "["+col.name+"], "
         elif col.xtype in noLength:
-            attr += "`"+col.name +"` "+ colType + ", "
+            attr += "`"+col.name +"` "+ mysqlColType + ", "
             sattr += "["+col.name+"], "
         else:
-            attr += "`"+col.name +"` "+ colType + "(" + str(col.length) + "), "
+            attr += "`"+col.name +"` "+ mysqlColType + "(" + str(col.length) + "), "
             sattr += "["+col.name+"], "
-    
+
     attr = attr[:-2]
     sattr = sattr[:-2]
 
-    if functions.check_table_exists(my_cursor, crtTable):
-#        my_cursor.execute("drop table "+crtTable)
+    if crtTable not in config.blacklist_tables:
+        if functions.check_table_exists(my_cursor, crtTable):
+    #        my_cursor.execute("drop table "+crtTable)
 
-        my_cursor.execute("CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;") #create the new table and all columns
-        pprint.pprint('Created Table: ' + crtTable)
+            my_cursor.execute("CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;") #create the new table and all columns
+            print("CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;")
 
-        if crtTable not in config.blacklist_tables:
-            ms_cursor.execute("SELECT "+sattr+" FROM "+ tbl[0])
+            text = colored('Created Table: ' + crtTable, 'green')
+            print(text);
+
+            ms_cursor.execute("SELECT "+sattr+" FROM "+ crtTable)
             tbl_data = ms_cursor.fetchall()
 
             total_rows = 0
@@ -88,15 +91,22 @@ for tbl in ms_tables:
                 new_row = list(row)
 
                 for i in functions.common_iterable(new_row):
-
                     if new_row[i] == None:
                        new_row[i] = 0
                     elif type(new_row[i]) == datetime.datetime:
+                        new_row[i] = new_row[i].date().isoformat()+' '+new_row[i].time().isoformat()
+                    elif type(new_row[i]) == datetime.date:
                         new_row[i] = new_row[i].date().isoformat()
+                    elif type(new_row[i]) == datetime.time:
+                        new_row[i] = new_row[i].time().isoformat()
                     elif new_row[i] == False:
                         new_row[i] = 0
                     elif new_row[i] == True:
                         new_row[i] = 1
+                    elif type(new_row[i]) == unicode:
+                        new_row[i] = str(new_row[i]).encode('utf-8')
+                    else:
+                        new_row[i] = str(new_row[i])
 
                 my_conn.ping(True)
 
@@ -106,12 +116,16 @@ for tbl in ms_tables:
                 my_conn.commit() #mysql commit changes to database
                 total_rows = total_rows + 1
 
-            pprint.pprint('Imported All Data For Table: ' + crtTable)
-            pprint.pprint(total_rows)
+            text = colored('Imported All Data For Table: ' + crtTable, 'green')
+            print(text)
+            text = colored('Total Imported Rows: ' + str(total_rows), 'green')
+            print(text)
         else:
-            pprint.pprint('Blacklisted Table: ' + crtTable)
+            text = colored('Table Exists: ' + crtTable, 'cyan')
+            print(text);
     else:
-        pprint.pprint('Table Exists: ' + crtTable)
+        text = colored('Table Blacklisted: ' + crtTable, 'red')
+        print(text)
         
 my_cursor.close()
 my_conn.close() #mysql close connection
