@@ -16,12 +16,32 @@ reload(sys);
 sys.setdefaultencoding("utf8")
 
 #connection for MSSQL. (Note: you must have FreeTDS installed and configured!)
-ms_conn = pyodbc.connect(config.odbcConString)
-ms_cursor = ms_conn.cursor()
+try:
+    ms_conn = pyodbc.connect(config.odbcConString)
+    ms_cursor = ms_conn.cursor()
+except:
+    print("Unexpected error in bagging area in MsSQL")
+    sys.exit(1)
 
 #connection for MySQL
-my_conn = MySQLdb.connect(host=config.MYSQL_host,user=config.MYSQL_user, passwd=config.MYSQL_passwd, db=config.MYSQL_db)
-my_cursor = my_conn.cursor()   
+try:
+    my_conn = MySQLdb.connect(host=config.MYSQL_host,user=config.MYSQL_user, passwd=config.MYSQL_passwd, db=config.MYSQL_db)
+    my_cursor = my_conn.cursor()
+except:
+    print("Unexpected error in bagging area in Mysql")
+    sys.exit(1)
+
+def main(argv):
+    for arg in argv:
+        if arg == 'test':
+            if(ms_cursor):
+                print('Connected to MSSQL')
+            if(my_cursor):
+                print('Connected to MYSQL')
+            sys.exit()
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
 
 final_table_list = []
 final_new_table_names = {}
