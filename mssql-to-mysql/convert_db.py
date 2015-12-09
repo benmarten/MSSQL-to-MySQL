@@ -1,15 +1,15 @@
 #!/usr/bin/python
+
+from __future__ import print_function
+
 import MySQLdb
 import pyodbc
 import sys
 import datetime
-
 import includes.config as config
 import includes.functions as functions
 import includes.sqlserver_datatypes as data_types
-
 import pprint
-
 from termcolor import colored, cprint
 
 reload(sys);
@@ -30,6 +30,8 @@ try:
 except:
     print("Unexpected error in bagging area in Mysql")
     sys.exit(1)
+
+my_cursor.execute("SET SESSION sql_mode='ALLOW_INVALID_DATES';");
 
 def main(argv):
     for arg in argv:
@@ -86,18 +88,30 @@ for tbl in ms_tables:
             attr += "`"+col.name +"` "+ mysqlColType + ", "
             sattr += "["+col.name+"], "
         else:
-            attr += "`"+col.name +"` "+ mysqlColType + "(" + str(col.length) + "), "
+            length = col.length
+            if length < 1:
+                length = 255
+
+            attr += "`"+col.name.strip() +"` "+ mysqlColType + "(" + str(length) + "), "
             sattr += "["+col.name+"], "
 
     attr = attr[:-2]
     sattr = sattr[:-2]
 
     if crtTable not in config.blacklist_tables:
-        if functions.check_table_exists(my_cursor, crtTable):
-    #        my_cursor.execute("drop table "+crtTable)
+        # if functions.check_table_exists(my_cursor, crtTable):
+            # my_cursor.execute("drop table "+crtTable)
 
-            my_cursor.execute("CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;") #create the new table and all columns
-            print("CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;")
+            f = open('out/' + crtTable + '.sql','w')
+
+            f.write('CREATE DATABASE IF NOT EXISTS ' + config.MYSQL_db + ';\n')
+            f.write('USE ' + config.MYSQL_db + ';\n')
+            f.write("SET SESSION sql_mode='ALLOW_INVALID_DATES';\n")
+
+            sql = "CREATE TABLE " + crtTable + " (" + attr + ") ENGINE = MYISAM;"
+            print(sql)
+            # my_cursor.execute(sql) #create the new table and all columns
+            f.write(sql + '\n')
 
             text = colored('Created Table: ' + crtTable, 'green')
             print(text);
@@ -130,19 +144,25 @@ for tbl in ms_tables:
 
                 my_conn.ping(True)
 
-                query_string = "INSERT INTO `" + crtTable + "` VALUES %r;" % (tuple(new_row),)
+                if len(new_row)>1:
+                    query_string = "INSERT INTO `" + crtTable + "` VALUES %r;" % (tuple(new_row),)
+                else:
+                    query_string = "INSERT INTO `" + crtTable + "` VALUES (%r);" % new_row[0]
 
-                my_cursor.execute(query_string)
-                my_conn.commit() #mysql commit changes to database
+                # print(query_string)
+                f.write(query_string + '\n')
+                # my_cursor.execute(query_string)
+                # my_conn.commit() #mysql commit changes to database
                 total_rows = total_rows + 1
 
+            f.close()
             text = colored('Imported All Data For Table: ' + crtTable, 'green')
             print(text)
             text = colored('Total Imported Rows: ' + str(total_rows), 'green')
             print(text)
-        else:
-            text = colored('Table Exists: ' + crtTable, 'cyan')
-            print(text);
+        # else:
+        #     text = colored('Table Exists: ' + crtTable, 'cyan')
+        #     print(text);
     else:
         text = colored('Table Blacklisted: ' + crtTable, 'red')
         print(text)
